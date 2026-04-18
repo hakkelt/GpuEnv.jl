@@ -248,11 +248,7 @@ function _sync_active_project_env_impl(
     )
 
     project_with_backends = _merge_backend_entries(source_project, requested)
-    sync_project_data = project_with_backends
-    # Strip identifying fields so Julia does not mistake the overlay env for the
-    # source package when looking up the entry-point source file.
-    delete!(sync_project_data, "name")
-    delete!(sync_project_data, "uuid")
+    sync_project_data = _sanitize_environment_project(project_with_backends)
 
     env_dir, persisted = _environment_dir(
         source_root;
@@ -370,9 +366,7 @@ function _sync_env_from_path_impl(
         exclude,
     )
 
-    sync_project_data = _merge_backend_entries(source_project, requested)
-    delete!(sync_project_data, "name")
-    delete!(sync_project_data, "uuid")
+    sync_project_data = _sanitize_environment_project(_merge_backend_entries(source_project, requested))
 
     env_dir, persisted = _environment_dir(
         root;
@@ -536,6 +530,39 @@ function _copy_manifest_with_absolute_paths(source::AbstractString, dest::Abstra
     )
     write(dest, content)
     return nothing
+end
+
+function _sanitize_environment_project(project_data::Dict{String, Any})
+    sanitized = deepcopy(project_data)
+
+    for key in ("name", "uuid", "version", "authors", "workspace", "weakdeps", "extensions", "extras", "targets")
+        pop!(sanitized, key, nothing)
+    end
+
+    deps = get(sanitized, "deps", Dict{String, Any}())
+    dep_names = deps isa Dict ? Set(String.(keys(deps))) : Set{String}()
+
+    compat = get(sanitized, "compat", nothing)
+    if compat isa Dict
+        filtered_compat = Dict{String, Any}()
+        for (name, value) in compat
+            if name == "julia" || name in dep_names
+                filtered_compat[name] = value
+            end
+        end
+        isempty(filtered_compat) ? pop!(sanitized, "compat", nothing) : (sanitized["compat"] = filtered_compat)
+    end
+
+    sources = get(sanitized, "sources", nothing)
+    if sources isa Dict
+        filtered_sources = Dict{String, Any}()
+        for (name, value) in sources
+            name in dep_names && (filtered_sources[name] = value)
+        end
+        isempty(filtered_sources) ? pop!(sanitized, "sources", nothing) : (sanitized["sources"] = filtered_sources)
+    end
+
+    return sanitized
 end
 
 function _write_environment!(project_data::Dict{String, Any}, manifest_source::Union{Nothing, String}, env_dir::AbstractString)

@@ -582,3 +582,154 @@ end
     @test :JLArrays in result.installed_backends
     @test isempty(result.functional_backends)
 end
+
+@testitem "_sanitize_environment_project strips package-only metadata" begin
+    using GPUEnv
+    using Test
+
+    project_data = Dict{String, Any}(
+        "name" => "MyPkg",
+        "uuid" => "00000000-0000-0000-0000-000000000001",
+        "version" => "1.0.0",
+        "authors" => ["Alice"],
+        "workspace" => Dict("projects" => ["test"]),
+        "weakdeps" => Dict("CUDA" => "052768ef-5323-5732-b1bb-66c8b64840ba"),
+        "extensions" => Dict("CUDAExt" => ["CUDA"]),
+        "extras" => Dict("Test" => "8dfed614-e22c-5e08-85e1-65c5234f0b40"),
+        "targets" => Dict("test" => ["Test"]),
+        "deps" => Dict("Foo" => "00000000-0000-0000-0000-000000000002"),
+    )
+
+    sanitized = GPUEnv._sanitize_environment_project(project_data)
+
+    @test !haskey(sanitized, "name")
+    @test !haskey(sanitized, "uuid")
+    @test !haskey(sanitized, "version")
+    @test !haskey(sanitized, "authors")
+    @test !haskey(sanitized, "workspace")
+    @test !haskey(sanitized, "weakdeps")
+    @test !haskey(sanitized, "extensions")
+    @test !haskey(sanitized, "extras")
+    @test !haskey(sanitized, "targets")
+    @test sanitized["deps"]["Foo"] == "00000000-0000-0000-0000-000000000002"
+end
+
+@testitem "_sanitize_environment_project filters compat to deps only" begin
+    using GPUEnv
+    using Test
+
+    project_data = Dict{String, Any}(
+        "name" => "MyPkg",
+        "uuid" => "00000000-0000-0000-0000-000000000003",
+        "deps" => Dict{String, Any}(
+            "Foo" => "00000000-0000-0000-0000-000000000004",
+        ),
+        "compat" => Dict{String, Any}(
+            "julia" => "1.10",
+            "Foo" => "1",
+            "Bar" => "2",  # not a dep — should be removed
+        ),
+    )
+
+    sanitized = GPUEnv._sanitize_environment_project(project_data)
+
+    @test sanitized["compat"]["julia"] == "1.10"
+    @test sanitized["compat"]["Foo"] == "1"
+    @test !haskey(sanitized["compat"], "Bar")
+end
+
+@testitem "_sanitize_environment_project removes empty compat after filtering" begin
+    using GPUEnv
+    using Test
+
+    project_data = Dict{String, Any}(
+        "name" => "MyPkg",
+        "uuid" => "00000000-0000-0000-0000-000000000005",
+        "deps" => Dict{String, Any}(),
+        "compat" => Dict{String, Any}(
+            "SomeWeakDep" => "1",  # not a dep — should be removed
+        ),
+    )
+
+    sanitized = GPUEnv._sanitize_environment_project(project_data)
+
+    @test !haskey(sanitized, "compat")
+end
+
+@testitem "_sanitize_environment_project filters sources to deps only" begin
+    using GPUEnv
+    using Test
+
+    project_data = Dict{String, Any}(
+        "name" => "MyPkg",
+        "uuid" => "00000000-0000-0000-0000-000000000006",
+        "deps" => Dict{String, Any}(
+            "Foo" => "00000000-0000-0000-0000-000000000007",
+        ),
+        "sources" => Dict{String, Any}(
+            "Foo" => Dict{String, Any}("path" => "/path/to/Foo"),
+            "Bar" => Dict{String, Any}("path" => "/path/to/Bar"),  # not a dep
+        ),
+    )
+
+    sanitized = GPUEnv._sanitize_environment_project(project_data)
+
+    @test haskey(sanitized["sources"], "Foo")
+    @test !haskey(sanitized["sources"], "Bar")
+end
+
+@testitem "_sanitize_environment_project removes empty sources after filtering" begin
+    using GPUEnv
+    using Test
+
+    project_data = Dict{String, Any}(
+        "name" => "MyPkg",
+        "uuid" => "00000000-0000-0000-0000-000000000008",
+        "deps" => Dict{String, Any}(),
+        "sources" => Dict{String, Any}(
+            "SomeWeakDep" => Dict{String, Any}("path" => "/path/to/SomeWeakDep"),
+        ),
+    )
+
+    sanitized = GPUEnv._sanitize_environment_project(project_data)
+
+    @test !haskey(sanitized, "sources")
+end
+
+@testitem "_sanitize_environment_project does not mutate input" begin
+    using GPUEnv
+    using Test
+
+    project_data = Dict{String, Any}(
+        "name" => "MyPkg",
+        "uuid" => "00000000-0000-0000-0000-000000000009",
+        "weakdeps" => Dict("CUDA" => "052768ef-5323-5732-b1bb-66c8b64840ba"),
+    )
+
+    GPUEnv._sanitize_environment_project(project_data)
+
+    @test haskey(project_data, "name")
+    @test haskey(project_data, "uuid")
+    @test haskey(project_data, "weakdeps")
+end
+
+@testitem "_write_environment! copies manifest even when local path sources exist" begin
+    using GPUEnv
+    using Test
+
+    project_data = Dict{String, Any}(
+        "deps" => Dict{String, Any}("Foo" => "00000000-0000-0000-0000-000000000020"),
+        "sources" => Dict{String, Any}(
+            "Foo" => Dict{String, Any}("path" => "/absolute/path/to/Foo"),
+        ),
+    )
+    src_dir = mktempdir()
+    manifest_src = joinpath(src_dir, "Manifest.toml")
+    write(manifest_src, "# fake manifest\n")
+    env_dir = mktempdir()
+
+    GPUEnv._write_environment!(project_data, manifest_src, env_dir)
+
+    # Manifest must be copied regardless of whether the project has local path sources
+    @test isfile(joinpath(env_dir, "Manifest.toml"))
+end
