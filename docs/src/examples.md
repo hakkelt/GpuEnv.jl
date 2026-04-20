@@ -34,7 +34,7 @@ GPUEnv.activate(backends_to_test = [:JLArrays])
 
 @testset "MyPkg" begin
     backend = first(gpu_backends())
-    x = backend(randn(Float32, 32))
+    x = gpu_randn(backend, Float32, 32)
     @test size(x) == (32,)
 end
 ```
@@ -106,5 +106,5 @@ for backend in gpu_backends() # this will load CUDA if available
 end
 ```
 
-`gpu_zeros`, `gpu_ones`, and `gpu_randn` provide a small backend-agnostic layer
+`to_gpu`, `gpu_zeros`, `gpu_ones`, and `gpu_randn` provide a small backend-agnostic layer
 for downstream code that supports multiple GPU implementations.

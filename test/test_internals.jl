@@ -26,7 +26,7 @@ end
 
     backend = GpuBackend(:CUDA, @__MODULE__, Vector{Float32})
     x = Float32[1.0, 2.0, 3.0]
-    result = backend(x)
+    result = to_gpu(backend, x)
     @test result isa Vector{Float32}
     @test result == x
 end

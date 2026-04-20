@@ -67,13 +67,20 @@ no-op, so this function is safe to call unconditionally in device-agnostic code.
 """
 function synchronize_backend(backend::GpuBackend)
     is_jlarray_backend(backend) && return nothing
-    isdefined(backend.module_ref, :synchronize) || return nothing
-    Base.invokelatest(getfield(backend.module_ref, :synchronize))
-    return nothing
+    if backend.name == :OpenCL
+        barrier_func = getfield(backend.module_ref, :barrier)
+        fence_const = getfield(backend.module_ref, :CLK_LOCAL_MEM_FENCE)
+        Base.invokelatest(barrier_func, fence_const)
+        return nothing
+    else
+        isdefined(backend.module_ref, :synchronize) || return nothing
+        Base.invokelatest(getfield(backend.module_ref, :synchronize))
+        return nothing
+    end
 end
 
 """
-    (backend::GpuBackend)(array)
+    to_gpu(backend::GpuBackend, array)
 
 Transfer `array` to the device represented by `backend`.
 
@@ -84,7 +91,7 @@ it calls `backend.array_type(array)` directly.
 - `backend::GpuBackend`: the GPU backend to use for device transfer
 - `array`: the CPU array to transfer
 """
-function (backend::GpuBackend)(array)
+function to_gpu(backend::GpuBackend, array)
     if is_jlarray_backend(backend)
         jl_fn = getfield(backend.module_ref, :jl)
         return Base.invokelatest(jl_fn, array)
@@ -403,6 +410,22 @@ function gpu_backends(
 end
 
 """
+    gpu_allocate(backend::GpuBackend, T, dims...)
+
+Allocate an uninitialized array of type `T` and dimensions `dims` on `backend`.
+Backends that do not expose their own uninitialized constructor fall back to
+creating the CPU array first and then transferring it with `backend(array)`.
+
+# Arguments
+- `backend::GpuBackend`: the GPU backend to use for allocation
+- `T::Type`: the element type for the array
+- `dims...`: dimensions of the array
+"""
+function gpu_allocate(backend::GpuBackend, ::Type{T}, dims...) where {T}
+    return _backend_allocate(backend, :undef, T, dims...; fallback = () -> to_gpu(backend, Array{T}(undef, dims...)))
+end
+
+"""
     gpu_zeros(backend::GpuBackend, T, dims...)
 
 Return a zero-filled array on `backend`.
@@ -416,7 +439,7 @@ the CPU array first and then transferring it with `backend(array)`.
 - `dims...`: dimensions of the array
 """
 function gpu_zeros(backend::GpuBackend, ::Type{T}, dims...) where {T}
-    return _backend_allocate(backend, :zeros, T, dims...; fallback = () -> backend(zeros(T, dims...)))
+    return _backend_allocate(backend, :zeros, T, dims...; fallback = () -> to_gpu(backend, zeros(T, dims...)))
 end
 
 """
@@ -430,7 +453,7 @@ Return a one-filled array on `backend`.
 - `dims...`: dimensions of the array
 """
 function gpu_ones(backend::GpuBackend, ::Type{T}, dims...) where {T}
-    return _backend_allocate(backend, :ones, T, dims...; fallback = () -> backend(ones(T, dims...)))
+    return _backend_allocate(backend, :ones, T, dims...; fallback = () -> to_gpu(backend, ones(T, dims...)))
 end
 
 """
@@ -455,7 +478,7 @@ Return a GPU array of random normal values with element type `T`.
 - `dims...`: dimensions of the array
 """
 function gpu_randn(backend::GpuBackend, ::Type{T}, dims...) where {T}
-    return _backend_allocate(backend, :randn, T, dims...; fallback = () -> backend(randn(T, dims...)))
+    return _backend_allocate(backend, :randn, T, dims...; fallback = () -> to_gpu(backend, randn(T, dims...)))
 end
 
 """
@@ -481,7 +504,7 @@ backend = first(backends)
 wrapper = gpu_wrapper(backend, Float32, 64, 64)
 ```
 """
-gpu_wrapper(backend::GpuBackend, array) = Base.typename(typeof(backend(array))).wrapper
+gpu_wrapper(backend::GpuBackend, array) = Base.typename(typeof(to_gpu(backend, array))).wrapper
 
 """
     gpu_wrapper(backend::GpuBackend, T, dims...)

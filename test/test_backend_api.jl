@@ -132,7 +132,7 @@ end
     @test is_jlarray_backend(backend)
 
     x = randn(Float64, 4)
-    x_gpu = backend(x)
+    x_gpu = to_gpu(backend, x)
     @test x_gpu isa JLArrays.JLArray
     @test collect(x_gpu) ≈ x
 end
@@ -144,6 +144,10 @@ end
     backends = gpu_backends(; backends_to_test = Symbol[])
     @test !isempty(backends)
     backend = first(backends)
+
+    y = gpu_allocate(backend, Float32, 2, 3)
+    @test y isa JLArrays.JLArray{Float32}
+    @test size(y) == (2, 3)
 
     z = gpu_zeros(backend, Float64, 3)
     @test z isa JLArrays.JLArray{Float64}
