@@ -8,7 +8,6 @@ GPUEnv = "78a0b619-6146-4252-b244-0f81c54be577"
 JSON2 = "2535ab7d-5cd8-5a07-80ac-9b1792aadce3"
 
 [compat]
-GPUEnv = "0.1.0"
 JSON2 = "0.3.4"
 
 [extras]

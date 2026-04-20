@@ -118,7 +118,7 @@ using GPUEnv
 
 GPUEnv.activate()   # overlays the active project
 backend = first(gpu_backends())
-x = backend(randn(Float32, 128))
+x = gpu_randn(backend, Float32, 128)
 ```
 
 ## Compat and dependency resolution

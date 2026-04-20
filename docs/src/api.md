@@ -23,6 +23,8 @@ GPUEnv.resolve_backends
 
 ```@docs
 GPUEnv.gpu_backends
+GPUEnv.to_gpu
+GPUEnv.gpu_allocate
 GPUEnv.gpu_zeros
 GPUEnv.gpu_ones
 GPUEnv.gpu_randn
